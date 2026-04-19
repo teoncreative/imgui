@@ -3903,6 +3903,13 @@ namespace ImGui
     IMGUI_API void          RenderTextClipped(const ImVec2& pos_min, const ImVec2& pos_max, const char* text, const char* text_end, const ImVec2* text_size_if_known, const ImVec2& align = ImVec2(0, 0), const ImRect* clip_rect = NULL);
     IMGUI_API void          RenderTextClippedEx(ImDrawList* draw_list, const ImVec2& pos_min, const ImVec2& pos_max, const char* text, const char* text_end, const ImVec2* text_size_if_known, const ImVec2& align = ImVec2(0, 0), const ImRect* clip_rect = NULL);
     IMGUI_API void          RenderTextEllipsis(ImDrawList* draw_list, const ImVec2& pos_min, const ImVec2& pos_max, float ellipsis_max_x, const char* text, const char* text_end, const ImVec2* text_size_if_known);
+    // If the label begins with a Private-Use-Area codepoint (icon fonts like
+    // Lucide), render that glyph with icon_col and the rest with the current
+    // ImGuiCol_Text. Otherwise falls through to RenderText / RenderTextClipped.
+    IMGUI_API void          RenderTextWithColoredIcon(ImVec2 pos, ImVec2 rect_max, const char* text, const char* text_end, ImU32 icon_col, bool clipped);
+    // Same as RenderTextWithColoredIcon but for callers that need ellipsis
+    // clipping (notably tab labels). Falls through to RenderTextEllipsis.
+    IMGUI_API void          RenderTextEllipsisWithColoredIcon(ImDrawList* draw_list, ImVec2 pos_min, ImVec2 pos_max, float ellipsis_max_x, const char* text, const char* text_end, ImU32 icon_col);
     IMGUI_API void          RenderFrame(ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, bool borders = true, float rounding = 0.0f);
     IMGUI_API void          RenderFrameBorder(ImVec2 p_min, ImVec2 p_max, float rounding = 0.0f);
     IMGUI_API void          RenderColorComponentMarker(const ImRect& bb, ImU32 col, float rounding);

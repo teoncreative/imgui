@@ -924,7 +924,7 @@ bool ImGui::CloseButton(ImGuiID id, const ImVec2& pos)
     if (hovered)
         window->DrawList->AddRectFilled(bb.Min, bb.Max, bg_col);
     RenderNavCursor(bb, id, ImGuiNavRenderCursorFlags_Compact);
-    const ImU32 cross_col = GetColorU32(ImGuiCol_Text);
+    const ImU32 cross_col = GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled);
     const ImVec2 cross_center = bb.GetCenter() - ImVec2(0.5f, 0.5f);
     const float cross_extent = g.FontSize * 0.5f * 0.7071f - 1.0f;
     const float cross_thickness = 1.0f * (float)(int)g.Style._MainScale; // FIXME-DPI
@@ -7063,6 +7063,11 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
     // Render
     {
         const ImU32 text_col = GetColorU32(ImGuiCol_Text);
+        // Tree node disclosure arrow: muted by default, accent when selected.
+        // Uses existing style colors so themes can control both.
+        const ImU32 arrow_col = selected
+            ? GetColorU32(ImGuiCol_CheckMark)
+            : GetColorU32(ImGuiCol_TextDisabled);
         ImGuiNavRenderCursorFlags nav_render_cursor_flags = ImGuiNavRenderCursorFlags_Compact;
         if (is_multi_select)
             nav_render_cursor_flags |= ImGuiNavRenderCursorFlags_AlwaysDraw; // Always show the nav rectangle
@@ -7077,7 +7082,7 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
             if (flags & ImGuiTreeNodeFlags_Bullet)
                 RenderBullet(window->DrawList, ImVec2(text_pos.x - text_offset_x * 0.60f, text_pos.y + g.FontSize * 0.5f), text_col);
             else if (!is_leaf)
-                RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y), text_col, is_open ? ((flags & ImGuiTreeNodeFlags_UpsideDownArrow) ? ImGuiDir_Up : ImGuiDir_Down) : ImGuiDir_Right, 1.0f);
+                RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y), arrow_col, is_open ? ((flags & ImGuiTreeNodeFlags_UpsideDownArrow) ? ImGuiDir_Up : ImGuiDir_Down) : ImGuiDir_Right, 1.0f);
             else // Leaf without bullet, left-adjusted text
                 text_pos.x -= text_offset_x - padding.x;
             if (flags & ImGuiTreeNodeFlags_ClipLabelForTrailingButton)
@@ -7099,7 +7104,7 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
             if (flags & ImGuiTreeNodeFlags_Bullet)
                 RenderBullet(window->DrawList, ImVec2(text_pos.x - text_offset_x * 0.5f, text_pos.y + g.FontSize * 0.5f), text_col);
             else if (!is_leaf)
-                RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y + g.FontSize * 0.15f), text_col, is_open ? ((flags & ImGuiTreeNodeFlags_UpsideDownArrow) ? ImGuiDir_Up : ImGuiDir_Down) : ImGuiDir_Right, 0.70f);
+                RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y + g.FontSize * 0.15f), arrow_col, is_open ? ((flags & ImGuiTreeNodeFlags_UpsideDownArrow) ? ImGuiDir_Up : ImGuiDir_Down) : ImGuiDir_Right, 0.70f);
             if (g.LogEnabled)
                 LogSetNextTextDecoration(">", NULL);
         }
@@ -7107,11 +7112,11 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
         if (draw_tree_lines)
             TreeNodeDrawLineToChildNode(ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y + g.FontSize * 0.5f));
 
-        // Label
-        if (display_frame)
-            RenderTextClipped(text_pos, frame_bb.Max, label, label_end, &label_size);
-        else
-            RenderText(text_pos, label, label_end, false);
+        // Label. A leading Private-Use-Area glyph (icon fonts like Lucide)
+        // is rendered in the arrow color so icon + arrow read as the same
+        // "chrome" tone; the text stays on ImGuiCol_Text.
+        RenderTextWithColoredIcon(text_pos, frame_bb.Max, label, label_end,
+                                  arrow_col, /*clipped=*/display_frame);
 
         if (span_all_columns_label)
             TablePopBackgroundChannel();
@@ -7472,7 +7477,10 @@ bool ImGui::Selectable(const char* label, bool selected, ImGuiSelectableFlags fl
         {
             // Between 1.91.0 and 1.91.4 we made selected Selectable use an arbitrary lerp between _Header and _HeaderHovered. Removed that now. (#8106)
             ImU32 col = GetColorU32((held && highlighted) ? ImGuiCol_HeaderActive : highlighted ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
-            RenderFrame(bb.Min, bb.Max, col, false, 0.0f);
+            // Use FrameRounding so Selectable highlights (menu items, submenu
+            // items, combo entries, hierarchy rows) match the rest of the
+            // theme's rounded frames instead of being hard rectangles.
+            RenderFrame(bb.Min, bb.Max, col, false, style.FrameRounding);
         }
         if (g.NavId == id)
         {
@@ -9539,14 +9547,27 @@ bool ImGui::MenuItemEx(const char* label, const char* icon, const char* shortcut
     return pressed;
 }
 
+// Thread-local icon staged by SetNextMenuItemIcon(); consumed by the next
+// MenuItem (or p_selected variant) call and auto-cleared.
+static thread_local const char* g_next_menu_item_icon = NULL;
+
+void ImGui::SetNextMenuItemIcon(const char* icon)
+{
+    g_next_menu_item_icon = (icon && icon[0]) ? icon : NULL;
+}
+
 bool ImGui::MenuItem(const char* label, const char* shortcut, bool selected, bool enabled)
 {
-    return MenuItemEx(label, NULL, shortcut, selected, enabled);
+    const char* icon = g_next_menu_item_icon;
+    g_next_menu_item_icon = NULL;
+    return MenuItemEx(label, icon, shortcut, selected, enabled);
 }
 
 bool ImGui::MenuItem(const char* label, const char* shortcut, bool* p_selected, bool enabled)
 {
-    if (MenuItemEx(label, NULL, shortcut, p_selected ? *p_selected : false, enabled))
+    const char* icon = g_next_menu_item_icon;
+    g_next_menu_item_icon = NULL;
+    if (MenuItemEx(label, icon, shortcut, p_selected ? *p_selected : false, enabled))
     {
         if (p_selected)
             *p_selected = !*p_selected;
@@ -9837,7 +9858,9 @@ static void ImGui::TabBarLayout(ImGuiTabBar* tab_bar)
         ImQsort(tab_bar->Tabs.Data, tab_bar->Tabs.Size, sizeof(ImGuiTabItem), TabItemComparerBySection);
 
     // Calculate spacing between sections
-    const float tab_spacing = g.Style.ItemInnerSpacing.x;
+    // Tabs are laid out flush against each other (no padding). Individual
+    // tabs have their own 1px border so they remain visually distinct.
+    const float tab_spacing = 0.0f;
     sections[0].Spacing = sections[0].TabCount > 0 && (sections[1].TabCount + sections[2].TabCount) > 0 ? tab_spacing : 0.0f;
     sections[1].Spacing = sections[1].TabCount > 0 && sections[2].TabCount > 0 ? tab_spacing : 0.0f;
 
@@ -10252,7 +10275,8 @@ void ImGui::TabBarQueueReorderFromMousePos(ImGuiTabBar* tab_bar, ImGuiTabItem* s
     if ((tab_bar->Flags & ImGuiTabBarFlags_Reorderable) == 0)
         return;
 
-    const float tab_spacing = g.Style.ItemInnerSpacing.x;
+    // See TabBarLayout: tabs are laid out flush against each other.
+    const float tab_spacing = 0.0f;
     const bool is_central_section = (src_tab->Flags & ImGuiTabItemFlags_SectionMask_) == 0;
     const float bar_offset = tab_bar->BarRect.Min.x - (is_central_section ? tab_bar->ScrollingTarget : 0);
 
@@ -10744,7 +10768,13 @@ bool    ImGui::TabItemEx(ImGuiTabBar* tab_bar, const char* label, bool* p_open, 
             }
             else
             {
-                display_draw_list->AddLine(tl - ImVec2(0.5f, 0.5f), tr - ImVec2(0.5f, 0.5f), overline_col, style.TabBarOverlineSize);
+                // Anchor the line center so the full stroke sits inside the
+                // tab rect (instead of extending above it, which overflowed
+                // the panel border for thick overlines).
+                const float half = style.TabBarOverlineSize * 0.5f;
+                display_draw_list->AddLine(tl + ImVec2(0.0f, half),
+                                           tr + ImVec2(0.0f, half),
+                                           overline_col, style.TabBarOverlineSize);
             }
         }
         RenderNavCursor(bb, id);
@@ -10854,11 +10884,19 @@ void ImGui::TabItemBackground(ImDrawList* draw_list, const ImRect& bb, ImGuiTabI
     draw_list->PathFillConvex(col);
     if (g.Style.TabBorderSize > 0.0f)
     {
-        draw_list->PathLineTo(ImVec2(bb.Min.x + 0.5f, y2));
-        draw_list->PathArcToFast(ImVec2(bb.Min.x + rounding + 0.5f, y1 + rounding + 0.5f), rounding, 6, 9);
-        draw_list->PathArcToFast(ImVec2(bb.Max.x - rounding - 0.5f, y1 + rounding + 0.5f), rounding, 9, 12);
-        draw_list->PathLineTo(ImVec2(bb.Max.x - 0.5f, y2));
-        draw_list->PathStroke(GetColorU32(ImGuiCol_Border), 0, g.Style.TabBorderSize);
+        // Tab border: left + right edges only. With tab_spacing = 0 in
+        // TabBarLayout, adjacent tabs touch, so the right edge of tab A
+        // and the left edge of tab B draw back-to-back, producing a
+        // single shared divider between them. Top edge is reserved for
+        // the selected-tab overline; bottom is intentionally skipped.
+        const ImU32 border_col = GetColorU32(ImGuiCol_Border);
+        const float border = g.Style.TabBorderSize;
+        draw_list->AddLine(ImVec2(bb.Min.x + 0.5f, bb.Min.y),
+                           ImVec2(bb.Min.x + 0.5f, y2),
+                           border_col, border);
+        draw_list->AddLine(ImVec2(bb.Max.x - 0.5f, bb.Min.y),
+                           ImVec2(bb.Max.x - 0.5f, y2),
+                           border_col, border);
     }
 }
 
@@ -10925,8 +10963,13 @@ void ImGui::TabItemLabelAndCloseButton(ImDrawList* draw_list, const ImRect& bb, 
     else if (close_button_visible)
     {
         ImGuiLastItemData last_item_backup = g.LastItemData;
+        // Tab close button always renders muted, regardless of whether the
+        // tab is selected, focused, or hovered. It uses ImGuiCol_Text as
+        // its glyph color internally.
+        PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_TextDisabled));
         if (CloseButton(close_button_id, button_pos))
             close_button_pressed = true;
+        PopStyleColor();
         g.LastItemData = last_item_backup;
 
         // Close with middle mouse button
@@ -10952,7 +10995,19 @@ void ImGui::TabItemLabelAndCloseButton(ImDrawList* draw_list, const ImRect& bb, 
         }
     }
     LogSetNextTextDecoration("/", "\\");
-    RenderTextEllipsis(draw_list, text_ellipsis_clip_bb.Min, text_ellipsis_clip_bb.Max, ellipsis_max_x, label, NULL, &label_size);
+    // Selected tab: icon = accent, text = full text color.
+    // Unselected tab: icon + text both muted.
+    const ImU32 icon_col = is_contents_visible
+        ? GetColorU32(ImGuiCol_CheckMark)
+        : GetColorU32(ImGuiCol_TextDisabled);
+    const ImU32 text_col = is_contents_visible
+        ? GetColorU32(ImGuiCol_Text)
+        : GetColorU32(ImGuiCol_TextDisabled);
+    PushStyleColor(ImGuiCol_Text, text_col);
+    RenderTextEllipsisWithColoredIcon(
+        draw_list, text_ellipsis_clip_bb.Min, text_ellipsis_clip_bb.Max,
+        ellipsis_max_x, label, NULL, icon_col);
+    PopStyleColor();
 
 #if 0
     if (!is_contents_visible)

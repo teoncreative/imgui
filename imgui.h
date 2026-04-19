@@ -825,6 +825,9 @@ namespace ImGui
     IMGUI_API void          EndMenu();                                                          // only call EndMenu() if BeginMenu() returns true!
     IMGUI_API bool          MenuItem(const char* label, const char* shortcut = NULL, bool selected = false, bool enabled = true);  // return true when activated.
     IMGUI_API bool          MenuItem(const char* label, const char* shortcut, bool* p_selected, bool enabled = true);              // return true when activated + toggle (*p_selected) if p_selected != NULL
+    IMGUI_API void          SetNextMenuItemIcon(const char* icon);                              // stage an icon consumed by the next MenuItem()/MenuItemEx() call
+
+
 
     // Tooltips
     // - Tooltips are windows following the mouse. They do not take focus away.
@@ -1603,6 +1606,19 @@ enum ImGuiDir : int
     ImGuiDir_Up      = 2,
     ImGuiDir_Down    = 3,
     ImGuiDir_COUNT
+};
+
+// Identifies a built-in icon whose appearance can be overridden with a user
+// glyph via ImGuiStyle::IconFont and ImGuiStyle::IconGlyphs. When IconFont is
+// set and the glyph for an icon is non-zero, that glyph is rendered instead
+// of the default primitive (e.g. RenderArrow draws a glyph from IconFont).
+enum ImGuiIconId : int
+{
+    ImGuiIconId_ArrowUp,
+    ImGuiIconId_ArrowDown,
+    ImGuiIconId_ArrowLeft,
+    ImGuiIconId_ArrowRight,
+    ImGuiIconId_COUNT
 };
 
 // A sorting direction
@@ -2429,12 +2445,20 @@ struct ImGuiStyle
     ImVec2      DisplaySafeAreaPadding;     // Apply to every windows, menus, popups, tooltips: amount where we avoid displaying contents. Adjust if you cannot see the edges of your screen (e.g. on a TV where scaling has not been configured).
     bool        DockingNodeHasCloseButton;  // Docking node has their own CloseButton() to close all docked windows.
     float       DockingSeparatorSize;       // Thickness of resizing border between docked windows
+    ImVec2      DockingWindowPadding;       // Margin inset applied to the root dockspace and to every docked window, creating empty space around the dock tree and between docked panels. Total gap between adjacent docked windows = 2*padding + DockingSeparatorSize; gap at dockspace outer edge = 2*padding.
+    float       DockingTabBarExtraHeight;   // Extra pixels added to the dock node tab bar height on top of FontSize + FramePadding.y*2. Use to make tabs taller without inflating FramePadding globally.
     float       MouseCursorScale;           // Scale software rendered mouse cursor (when io.MouseDrawCursor is enabled). We apply per-monitor DPI scaling over this scale. May be removed later.
     bool        AntiAliasedLines;           // Enable anti-aliased lines/borders. Disable if you are really tight on CPU/GPU. Latched at the beginning of the frame (copied to ImDrawList).
     bool        AntiAliasedLinesUseTex;     // Enable anti-aliased lines/borders using textures where possible. Require backend to render with bilinear filtering (NOT point/nearest filtering). Latched at the beginning of the frame (copied to ImDrawList).
     bool        AntiAliasedFill;            // Enable anti-aliased edges around filled shapes (rounded rectangles, circles, etc.). Disable if you are really tight on CPU/GPU. Latched at the beginning of the frame (copied to ImDrawList).
     float       CurveTessellationTol;       // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     float       CircleTessellationMaxError; // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+
+    // Icon glyph overrides. When IconFont is non-NULL, built-in icons listed
+    // in ImGuiIconId use the corresponding codepoint from IconGlyphs[] (if
+    // non-zero) rendered with IconFont instead of the hard-coded primitive.
+    ImFont*     IconFont;                   // Font containing override glyphs. NULL = use built-in primitives (default behaviour).
+    ImWchar     IconGlyphs[ImGuiIconId_COUNT]; // Codepoints per icon id. 0 = fall back to built-in primitive for that icon.
 
     // Colors
     ImVec4      Colors[ImGuiCol_COUNT];

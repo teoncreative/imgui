@@ -1549,12 +1549,19 @@ ImGuiStyle::ImGuiStyle()
     DisplaySafeAreaPadding      = ImVec2(3,3);      // If you cannot see the edge of your screen (e.g. on a TV) increase the safe area padding. Covers popups/tooltips as well regular windows.
     DockingNodeHasCloseButton   = true;             // Docking nodes have their own CloseButton() to close all docked windows.
     DockingSeparatorSize        = 2.0f;             // Thickness of resizing border between docked windows
+    DockingWindowPadding        = ImVec2(0,0);      // No outer/inner margin by default. Set non-zero for gaps around the dock tree and between docked panels.
+    DockingTabBarExtraHeight    = 0.0f;              // No extra dock tab bar height by default.
     MouseCursorScale            = 1.0f;             // Scale software rendered mouse cursor (when io.MouseDrawCursor is enabled). May be removed later.
     AntiAliasedLines            = true;             // Enable anti-aliased lines/borders. Disable if you are really tight on CPU/GPU.
     AntiAliasedLinesUseTex      = true;             // Enable anti-aliased lines/borders using textures where possible. Require backend to render with bilinear filtering (NOT point/nearest filtering).
     AntiAliasedFill             = true;             // Enable anti-aliased filled shapes (rounded rectangles, circles, etc.).
     CurveTessellationTol        = 1.25f;            // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     CircleTessellationMaxError  = 0.30f;            // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+
+    // Icon overrides disabled by default.
+    IconFont                    = NULL;
+    for (int i = 0; i < ImGuiIconId_COUNT; ++i)
+        IconGlyphs[i] = 0;
 
     // Behaviors
     HoverStationaryDelay        = 0.15f;            // Delay for IsItemHovered(ImGuiHoveredFlags_Stationary). Time required to consider mouse stationary.
@@ -3977,6 +3984,86 @@ void ImGui::RenderTextClipped(const ImVec2& pos_min, const ImVec2& pos_max, cons
     RenderTextClippedEx(window->DrawList, pos_min, pos_max, text, text_display_end, text_size_if_known, align, clip_rect);
     if (g.LogEnabled)
         LogRenderedText(&pos_min, text, text_display_end);
+}
+
+// If `text` starts with a codepoint in the Unicode Private Use Area
+// (U+E000..U+F8FF, where icon fonts like Lucide live), render that leading
+// glyph with `icon_col` and the remaining text with the current
+// ImGuiCol_Text. When no icon is detected, falls through to the normal
+// RenderText / RenderTextClipped path. Any whitespace between the icon and
+// the rest of the label is stripped and replaced with one ItemInnerSpacing.x
+// gap so the layout is consistent regardless of how many spaces the caller
+// used as a separator.
+void ImGui::RenderTextWithColoredIcon(ImVec2 pos, ImVec2 rect_max, const char* text, const char* text_end, ImU32 icon_col, bool clipped)
+{
+    ImGuiContext& g = *GImGui;
+    const char* text_end_eff = text_end ? text_end : (text + strlen(text));
+    unsigned int first_cp = 0;
+    const int first_len = ImTextCharFromUtf8(&first_cp, text, text_end_eff);
+    const bool has_icon = (first_cp >= 0xE000 && first_cp <= 0xF8FF) && first_len > 0;
+    if (!has_icon)
+    {
+        if (clipped)
+            RenderTextClipped(pos, rect_max, text, text_end, NULL);
+        else
+            RenderText(pos, text, text_end, false);
+        return;
+    }
+
+    const char* rest = text + first_len;
+    while (rest < text_end_eff && (*rest == ' ' || *rest == '\t'))
+        rest++;
+    const ImVec2 icon_sz = CalcTextSize(text, text + first_len, false);
+    const float gap = g.Style.ItemInnerSpacing.x;
+    const ImVec2 rest_pos(pos.x + icon_sz.x + gap, pos.y);
+
+    PushStyleColor(ImGuiCol_Text, icon_col);
+    if (clipped)
+        RenderTextClipped(pos, rect_max, text, text + first_len, NULL);
+    else
+        RenderText(pos, text, text + first_len, false);
+    PopStyleColor();
+
+    if (rest < text_end_eff)
+    {
+        if (clipped)
+            RenderTextClipped(rest_pos, rect_max, rest, text_end_eff, NULL);
+        else
+            RenderText(rest_pos, rest, text_end_eff, false);
+    }
+}
+
+// Ellipsis variant of RenderTextWithColoredIcon, for callers that need the
+// "..." clipping behaviour (notably tab labels). The icon itself is drawn
+// without ellipsis (it's a single glyph), only the trailing text gets clipped.
+void ImGui::RenderTextEllipsisWithColoredIcon(ImDrawList* draw_list, ImVec2 pos_min, ImVec2 pos_max, float ellipsis_max_x, const char* text, const char* text_end, ImU32 icon_col)
+{
+    ImGuiContext& g = *GImGui;
+    const char* text_end_eff = text_end ? text_end : (text + strlen(text));
+    unsigned int first_cp = 0;
+    const int first_len = ImTextCharFromUtf8(&first_cp, text, text_end_eff);
+    const bool has_icon = (first_cp >= 0xE000 && first_cp <= 0xF8FF) && first_len > 0;
+    if (!has_icon)
+    {
+        RenderTextEllipsis(draw_list, pos_min, pos_max, ellipsis_max_x, text, text_end, NULL);
+        return;
+    }
+
+    const char* rest = text + first_len;
+    while (rest < text_end_eff && (*rest == ' ' || *rest == '\t'))
+        rest++;
+    const ImVec2 icon_sz = CalcTextSize(text, text + first_len, false);
+    const float gap = g.Style.ItemInnerSpacing.x;
+
+    // Icon: fixed position, no ellipsis.
+    draw_list->AddText(NULL, 0.0f, pos_min, icon_col, text, text + first_len);
+
+    if (rest < text_end_eff)
+    {
+        const ImVec2 rest_min(pos_min.x + icon_sz.x + gap, pos_min.y);
+        if (rest_min.x < pos_max.x)
+            RenderTextEllipsis(draw_list, rest_min, pos_max, ellipsis_max_x, rest, text_end_eff, NULL);
+    }
 }
 
 // Another overly complex function until we reorganize everything into a nice all-in-one helper.
@@ -7534,9 +7621,18 @@ void ImGui::RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar
                 bg_col = 0;
             if (bg_col & IM_COL32_A_MASK)
             {
-                ImRect bg_rect(window->Pos + ImVec2(0, window->TitleBarHeight), window->Pos + window->Size);
+                const bool docked_isolated = window->DockIsActive
+                    && (g.Style.DockingWindowPadding.x > 0.0f || g.Style.DockingWindowPadding.y > 0.0f);
+                // For docked panels that render as a single rounded tile we
+                // want the content bg to span the entire window rect so the
+                // rounded top corners land at the actual panel top (the tab
+                // bar draws on top of it). Otherwise skip the title bar area.
+                const float bg_top_offset = docked_isolated ? 0.0f : window->TitleBarHeight;
+                ImRect bg_rect(window->Pos + ImVec2(0, bg_top_offset), window->Pos + window->Size);
                 ImDrawFlags bg_rounding_flags;
-                if (window->DockIsActive)
+                if (docked_isolated)
+                    bg_rounding_flags = ImDrawFlags_RoundCornersAll;
+                else if (window->DockIsActive)
                     bg_rounding_flags = CalcRoundingFlagsForRectInRect(bg_rect, window->DockNode->HostWindow->Rect(), 0.0f);
                 else
                     bg_rounding_flags = (flags & ImGuiWindowFlags_NoTitleBar) ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersBottom;
@@ -7546,6 +7642,16 @@ void ImGui::RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar
                 bg_draw_list->AddRectFilled(bg_rect.Min, bg_rect.Max, bg_col, window_rounding, bg_rounding_flags);
                 if (window->DockIsActive)
                     bg_draw_list->ChannelsSetCurrent(DOCKING_HOST_DRAW_CHANNEL_FG);
+                // Draw outer border for docked panels that are isolated (with DockingWindowPadding).
+                // Regular (non-docked) windows use RenderWindowOuterBorders later in Begin().
+                // Keep this on the FG channel so it renders on top of the
+                // tab bar (which would otherwise cover the top edge).
+                if (docked_isolated && window_border_size > 0.0f)
+                {
+                    bg_draw_list->AddRect(bg_rect.Min, bg_rect.Max,
+                        GetColorU32(ImGuiCol_Border), window_rounding,
+                        ImDrawFlags_RoundCornersAll, window_border_size);
+                }
             }
         }
         if (window->DockIsActive)
@@ -8094,6 +8200,11 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
         window->DC.MenuBarOffset.x = ImMax(ImMax(window->WindowPadding.x, style.ItemSpacing.x), g.NextWindowData.MenuBarOffsetMinVal.x);
         window->DC.MenuBarOffset.y = g.NextWindowData.MenuBarOffsetMinVal.y;
         window->TitleBarHeight = (flags & ImGuiWindowFlags_NoTitleBar) ? 0.0f : g.FontSize + g.Style.FramePadding.y * 2.0f;
+        // Docked windows need to account for the extra tab bar height
+        // added by DockingTabBarExtraHeight, otherwise the content area
+        // starts too high and overlaps the bottom of the tab bar.
+        if (window->DockIsActive && !(flags & ImGuiWindowFlags_NoTitleBar))
+            window->TitleBarHeight += g.Style.DockingTabBarExtraHeight;
         window->MenuBarHeight = (flags & ImGuiWindowFlags_MenuBar) ? window->DC.MenuBarOffset.y + g.FontSize + g.Style.FramePadding.y * 2.0f : 0.0f;
         window->FontRefSize = g.FontSize; // Lock this to discourage calling window->CalcFontSize() outside of current window.
 
@@ -18749,10 +18860,17 @@ static void ImGui::DockNodeMoveWindows(ImGuiDockNode* dst_node, ImGuiDockNode* s
 
 static void ImGui::DockNodeApplyPosSizeToWindows(ImGuiDockNode* node)
 {
+    // Apply DockingWindowPadding as an inset so adjacent docked panels
+    // end up with 2*padding of empty space between them (and padding
+    // against the dockspace outer margin, which is inset separately).
+    ImGuiContext& g = *GImGui;
+    const ImVec2 pad = g.Style.DockingWindowPadding;
+    const ImVec2 window_pos = node->Pos + pad;
+    const ImVec2 window_size = ImMax(node->Size - pad * 2.0f, ImVec2(1.0f, 1.0f));
     for (ImGuiWindow* window : node->Windows)
     {
-        SetWindowPos(window, node->Pos, ImGuiCond_Always); // We don't assign directly to Pos because it can break the calculation of SizeContents on next frame
-        SetWindowSize(window, node->Size, ImGuiCond_Always);
+        SetWindowPos(window, window_pos, ImGuiCond_Always); // We don't assign directly to Pos because it can break the calculation of SizeContents on next frame
+        SetWindowSize(window, window_size, ImGuiCond_Always);
     }
 }
 
@@ -19217,7 +19335,12 @@ static void ImGui::DockNodeUpdate(ImGuiDockNode* node)
     // Update position/size, process and draw resizing splitters
     if (node->IsRootNode() && host_window)
     {
-        DockNodeTreeUpdatePosSize(node, host_window->Pos, host_window->Size);
+        // Apply DockingWindowPadding as an outer margin around the whole dock tree.
+        const ImVec2 dock_outer_padding = g.Style.DockingWindowPadding;
+        const ImVec2 dock_root_pos = host_window->Pos + dock_outer_padding;
+        const ImVec2 dock_root_size = ImMax(
+            host_window->Size - dock_outer_padding * 2.0f, ImVec2(1.0f, 1.0f));
+        DockNodeTreeUpdatePosSize(node, dock_root_pos, dock_root_size);
         PushStyleColor(ImGuiCol_Separator, g.Style.Colors[ImGuiCol_Border]);
         PushStyleColor(ImGuiCol_SeparatorActive, g.Style.Colors[ImGuiCol_ResizeGripActive]);
         PushStyleColor(ImGuiCol_SeparatorHovered, g.Style.Colors[ImGuiCol_ResizeGripHovered]);
@@ -19405,6 +19528,16 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
     node->WantCloseAll = false;
     node->WantCloseTabId = 0;
 
+    // Grow tab height via FramePadding.y so everything (rect, text baseline,
+    // close button, hover region) sizes/aligns consistently. The extra goes
+    // half on top + half on bottom.
+    const bool has_extra_tab_height = style.DockingTabBarExtraHeight > 0.0f;
+    if (has_extra_tab_height)
+        PushStyleVar(ImGuiStyleVar_FramePadding,
+                     ImVec2(style.FramePadding.x,
+                            style.FramePadding.y +
+                                style.DockingTabBarExtraHeight * 0.5f));
+
     // Decide if we should use a focused title bar color
     bool is_focused = false;
     ImGuiDockNode* root_node = DockNodeGetRootNode(node);
@@ -19426,6 +19559,8 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
             if (node->TabBar)
                 node->TabBar->VisibleTabId = node->VisibleWindow->TabId;
         }
+        if (has_extra_tab_height)
+            PopStyleVar();
         return;
     }
 
@@ -19472,6 +19607,25 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
     ImVec2 close_button_pos;
     DockNodeCalcTabBarLayout(node, &title_bar_rect, &tab_bar_rect, &window_menu_button_pos, &close_button_pos);
 
+    // DockingWindowPadding: the docked window rect is inset by this amount
+    // (see DockNodeApplyPosSizeToWindows). Shift the tab bar inward so it
+    // aligns with the window's top edge and shares its rounded corners,
+    // instead of extending past them into the panel gap.
+    const ImVec2 dock_pad = g.Style.DockingWindowPadding;
+    if (dock_pad.x > 0.0f || dock_pad.y > 0.0f)
+    {
+        title_bar_rect.Min.x += dock_pad.x;
+        title_bar_rect.Min.y += dock_pad.y;
+        title_bar_rect.Max.x -= dock_pad.x;
+        tab_bar_rect.Min.x += dock_pad.x;
+        tab_bar_rect.Min.y += dock_pad.y;
+        tab_bar_rect.Max.x -= dock_pad.x;
+        window_menu_button_pos.x += dock_pad.x;
+        window_menu_button_pos.y += dock_pad.y;
+        close_button_pos.x -= dock_pad.x;
+        close_button_pos.y += dock_pad.y;
+    }
+
     // Submit new tabs, they will be added as Unsorted and sorted below based on relative DockOrder value.
     const int tabs_count_old = tab_bar->Tabs.Size;
     for (int window_n = 0; window_n < node->Windows.Size; window_n++)
@@ -19485,8 +19639,32 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
     if (is_focused)
         node->LastFrameFocused = g.FrameCount;
     ImU32 title_bar_col = GetColorU32(host_window->Collapsed ? ImGuiCol_TitleBgCollapsed : is_focused ? ImGuiCol_TitleBgActive : ImGuiCol_TitleBg);
-    ImDrawFlags rounding_flags = CalcRoundingFlagsForRectInRect(title_bar_rect, host_window->Rect(), g.Style.DockingSeparatorSize);
-    host_window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, host_window->WindowRounding, rounding_flags);
+    const bool docked_isolated = g.Style.DockingWindowPadding.x > 0.0f || g.Style.DockingWindowPadding.y > 0.0f;
+    ImDrawFlags rounding_flags;
+    float title_rounding;
+    if (docked_isolated)
+    {
+        rounding_flags = ImDrawFlags_RoundCornersTop;
+        title_rounding = g.Style.WindowRounding;  // host WindowRounding is 0 from DockSpaceOverViewport
+    }
+    else
+    {
+        rounding_flags = CalcRoundingFlagsForRectInRect(title_bar_rect, host_window->Rect(), g.Style.DockingSeparatorSize);
+        title_rounding = host_window->WindowRounding;
+    }
+    host_window->DrawList->AddRectFilled(title_bar_rect.Min, title_bar_rect.Max, title_bar_col, title_rounding, rounding_flags);
+    // Hairline under the tab bar strip (separates the tab group from the
+    // panel content). Uses style.WindowBorderSize so it stays in sync with
+    // the panel's outer border thickness.
+    if (g.Style.WindowBorderSize > 0.0f)
+    {
+        const float thick = g.Style.WindowBorderSize;
+        const float y = title_bar_rect.Max.y - thick * 0.5f;
+        host_window->DrawList->AddLine(
+            ImVec2(title_bar_rect.Min.x, y),
+            ImVec2(title_bar_rect.Max.x, y),
+            GetColorU32(ImGuiCol_Border), thick);
+    }
 
     // Docking/Collapse button
     if (has_window_menu_button)
@@ -19674,6 +19852,9 @@ static void ImGui::DockNodeUpdateTabBar(ImGuiDockNode* node, ImGuiWindow* host_w
         host_window->DC.NavLayerCurrent = ImGuiNavLayer_Main;
         host_window->SkipItems = backup_skip_item;
     }
+
+    if (has_extra_tab_height)
+        PopStyleVar();
 }
 
 static void ImGui::DockNodeAddTabBar(ImGuiDockNode* node)
@@ -20617,7 +20798,12 @@ ImGuiID ImGui::DockSpaceOverViewport(ImGuiID dockspace_id, const ImGuiViewport* 
     PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    // The host window bg is what shows through the DockingWindowPadding gap
+    // between docked panels. Swap WindowBg -> DockingEmptyBg so themes can
+    // give it a different color and the gap reads as a real margin.
+    PushStyleColor(ImGuiCol_WindowBg, GetColorU32(ImGuiCol_DockingEmptyBg));
     Begin(label, NULL, host_window_flags);
+    PopStyleColor();
     PopStyleVar(3);
 
     // Submit the dockspace
@@ -21225,9 +21411,15 @@ void ImGui::BeginDocked(ImGuiWindow* window, bool* p_open)
         return;
     }
 
-    // Position/Size window
-    SetNextWindowPos(node->Pos);
-    SetNextWindowSize(node->Size);
+    // Position/Size window. Apply DockingWindowPadding so adjacent docked
+    // panels end up with 2*pad of empty gap between them and pad against
+    // the dockspace outer margin. Keep the window rect at least 1px so
+    // layout doesn't collapse for tiny nodes.
+    const ImVec2 dock_pad = g.Style.DockingWindowPadding;
+    const ImVec2 docked_pos = node->Pos + dock_pad;
+    const ImVec2 docked_size = ImMax(node->Size - dock_pad * 2.0f, ImVec2(1.0f, 1.0f));
+    SetNextWindowPos(docked_pos);
+    SetNextWindowSize(docked_size);
     g.NextWindowData.PosUndock = false; // Cancel implicit undocking of SetNextWindowPos()
     window->DockIsActive = true;
     window->DockNodeIsVisible = true;

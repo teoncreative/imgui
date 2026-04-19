@@ -5973,6 +5973,34 @@ begin:
 // Render an arrow aimed to be aligned with text (p_min is a position in the same space text would be positioned). To e.g. denote expanded/collapsed state
 void ImGui::RenderArrow(ImDrawList* draw_list, ImVec2 pos, ImU32 col, ImGuiDir dir, float scale)
 {
+    // User icon override: if IconFont is configured and the corresponding
+    // glyph is non-zero, draw that glyph instead of the built-in primitive.
+    if (dir >= ImGuiDir_Left && dir < ImGuiDir_COUNT)
+    {
+        ImGuiContext& g = *GImGui;
+        const ImGuiStyle& style = g.Style;
+        if (style.IconFont != NULL)
+        {
+            ImGuiIconId icon_id = ImGuiIconId_COUNT;
+            switch (dir)
+            {
+            case ImGuiDir_Up:    icon_id = ImGuiIconId_ArrowUp; break;
+            case ImGuiDir_Down:  icon_id = ImGuiIconId_ArrowDown; break;
+            case ImGuiDir_Left:  icon_id = ImGuiIconId_ArrowLeft; break;
+            case ImGuiDir_Right: icon_id = ImGuiIconId_ArrowRight; break;
+            default: break;
+            }
+            ImWchar glyph = (icon_id < ImGuiIconId_COUNT) ? style.IconGlyphs[icon_id] : 0;
+            if (glyph != 0)
+            {
+                char buf[5] = {};
+                ImTextCharToUtf8(buf, (unsigned int)glyph);
+                draw_list->AddText(style.IconFont, g.FontSize * scale, pos, col, buf);
+                return;
+            }
+        }
+    }
+
     const float h = draw_list->_Data->FontSize * 1.00f;
     float r = h * 0.40f * scale;
     ImVec2 center = pos + ImVec2(h * 0.50f, h * 0.50f * scale);
