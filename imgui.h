@@ -1377,6 +1377,12 @@ enum ImGuiTreeNodeFlags_
     ImGuiTreeNodeFlags_DrawLinesFull        = 1 << 19,  // Horizontal lines to child nodes. Vertical line drawn down to TreePop() position: cover full contents. Faster (for large trees).
     ImGuiTreeNodeFlags_DrawLinesToNodes     = 1 << 20,  // Horizontal lines to child nodes. Vertical line drawn down to bottom-most child node. Slower (for large trees).
 
+    // Wiesel extension: for framed leaf nodes without a bullet, keep the arrow-space
+    // reservation so their text aligns with non-leaf siblings. Without this flag (upstream
+    // default), leaves shift left into the arrow slot, which visually jumps a row when a
+    // child is added or removed.
+    ImGuiTreeNodeFlags_KeepArrowSpaceOnLeaf = 1 << 21,
+
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     ImGuiTreeNodeFlags_NavLeftJumpsBackHere = ImGuiTreeNodeFlags_NavLeftJumpsToParent,  // Renamed in 1.92.0
     ImGuiTreeNodeFlags_SpanTextWidth        = ImGuiTreeNodeFlags_SpanLabelWidth,        // Renamed in 1.90.7

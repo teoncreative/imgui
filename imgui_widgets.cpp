@@ -7083,10 +7083,8 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
                 RenderBullet(window->DrawList, ImVec2(text_pos.x - text_offset_x * 0.60f, text_pos.y + g.FontSize * 0.5f), text_col);
             else if (!is_leaf)
                 RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y), arrow_col, is_open ? ((flags & ImGuiTreeNodeFlags_UpsideDownArrow) ? ImGuiDir_Up : ImGuiDir_Down) : ImGuiDir_Right, 1.0f);
-            // Wiesel: leaf framed nodes keep the arrow-space reservation so
-            // their text aligns with non-leaf siblings (upstream shifts text
-            // left into the arrow slot, which makes adding a child visually
-            // jump the parent's name to the right).
+            else if (!(flags & ImGuiTreeNodeFlags_KeepArrowSpaceOnLeaf)) // Leaf without bullet, left-adjusted text
+                text_pos.x -= text_offset_x - padding.x;
             if (flags & ImGuiTreeNodeFlags_ClipLabelForTrailingButton)
                 frame_bb.Max.x -= g.FontSize + style.FramePadding.x;
             if (g.LogEnabled)
