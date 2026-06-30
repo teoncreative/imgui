@@ -9446,9 +9446,15 @@ bool ImGui::BeginMenuEx(const char* label, const char* icon, bool enabled)
     return menu_is_open;
 }
 
+// Thread-local icon staged by SetNextMenuItemIcon(); consumed by the next
+// MenuItem (or p_selected variant) or BeginMenu call and auto-cleared.
+static thread_local const char* g_next_menu_item_icon = NULL;
+
 bool ImGui::BeginMenu(const char* label, bool enabled)
 {
-    return BeginMenuEx(label, NULL, enabled);
+    const char* icon = g_next_menu_item_icon;
+    g_next_menu_item_icon = NULL;
+    return BeginMenuEx(label, icon, enabled);
 }
 
 void ImGui::EndMenu()
@@ -9546,10 +9552,6 @@ bool ImGui::MenuItemEx(const char* label, const char* icon, const char* shortcut
 
     return pressed;
 }
-
-// Thread-local icon staged by SetNextMenuItemIcon(); consumed by the next
-// MenuItem (or p_selected variant) call and auto-cleared.
-static thread_local const char* g_next_menu_item_icon = NULL;
 
 void ImGui::SetNextMenuItemIcon(const char* icon)
 {
